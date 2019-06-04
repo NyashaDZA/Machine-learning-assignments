@@ -1,0 +1,137 @@
+
+---
+title: 'Supervised learning: Assignment 2'
+author: "Nyashac"
+output: pdf_document
+---
+
+#QUESTION 2 - NEURAL NETWORK
+#Importing the data set
+```{r}
+training.data  <- read.csv('blocksTrain.csv',header = T)
+dim(training.data)
+head(training.data)
+```
+
+Preliminary data exploration
+
+```{r}
+str(training.data)
+# There as in ID in the first column which needs to be removed prior to modelling
+
+```
+
+#Remove ID column
+```{r}
+training.data <- training.data[,-1]
+```
+
+#Check that the data still has all of the appropriate variables
+```{r}
+dim(training.data)
+head(training.data)
+#After removing the column ID there are 11 remaining columns
+
+#We must specify y as a factor prior to modelling
+training.data$class <- as.factor(training.data$class)
+```
+
+#Inspect distribution of classes
+```{r}
+str(training.data)
+# Class is now a factor with 5 levels
+
+table(training.data$class)/nrow(training.data)
+#Most observations belong to a text - 89%
+```
+
+#Split data into a train and validation set (although cross-validation will be used on the training data set)
+```{r}
+#We start by splitting the data into a train and test set.
+
+#Shuffle the data set prior to sampling
+set.seed(3)
+training.data1 <- training.data[sample(nrow(training.data)),]
+
+
+index <- 1:nrow(training.data1)
+testindex <- sample(index, trunc(length(index)/5)) # I want an 80/20 split
+testset <- training.data1[testindex,]
+trainset <- training.data1[-testindex,]
+
+```
+
+#Attach required libraries for deep learning
+```{r}
+suppressMessages(library(h2o))
+suppressMessages(library(caret))
+suppressMessages(library(mlbench))
+suppressMessages(library(ggplot2))
+suppressMessages(library(reshape2))
+install.packages('DEEPR')
+suppressMessages(library(DEEPR))
+```
+
+
+# Initialise H2O Connection
+```{r}
+localH2O = h2o.init(ip = "localhost", port = 54321, startH2O = TRUE)
+```
+
+#Create H2o data sets for use with H2o
+```{r}
+datTrain_h2o <- as.h2o(trainset)
+datTest_h2o = as.h2o(testset)
+```
+
+#We will use gridsearch to find the best model
+#Setting up the grid - regularisation, and activation functions
+```{r}
+activation_opt <- c("Rectifier", "Maxout", "Tanh")
+l1_opt <- c(0, 0.00001, 0.0001, 0.001, 0.01)
+l2_opt <- c(0, 0.00001, 0.0001, 0.001, 0.01)
+
+hyper_params <- list(activation = activation_opt, l1 = l1_opt, l2 = l2_opt)
+search_criteria <- list(strategy = "RandomDiscrete", max_runtime_secs = 600)
+
+
+y <- "class"  #response column: 1-5
+x <- setdiff(names(trainset), y)  #vector of predictor column names
+```
+
+
+```{r}
+dl_grid <- h2o.grid("deeplearning", x = x, y = y,
+                    grid_id = "dl_grid",
+                    training_frame = datTrain_h2o,
+                    nfolds = 10, #10-fold cross validation
+                    seed = 3, #seed to allow for reproducability
+                    hidden = c(20,20),
+                    hyper_params = hyper_params,
+                    search_criteria = search_criteria)
+```
+
+```{r}
+dl_gridperf <- h2o.getGrid(grid_id = "dl_grid", 
+                           sort_by = "accuracy", 
+                         decreasing = TRUE)
+print(dl_gridperf)   #results of hyper-parameter tuning
+```
+
+#Storing the best model
+```{r}
+best_dl_model_id <- dl_gridperf@model_ids[[1]]
+best_dl <- h2o.getModel(best_dl_model_id)
+
+```
+
+#Evaluating model performance on a test set
+```{r}
+best_dl_perf <- h2o.performance(model = best_dl, newdata = datTest_h2o)
+h2o.mse(best_dl_perf)
+h2o.confusionMatrix(best_dl,datTest_h2o)# test error rate
+h2o.confusionMatrix(best_dl)# train error rate
+#export to latex
+xtable(h2o.confusionMatrix(best_dl))# train error rate
+```
+

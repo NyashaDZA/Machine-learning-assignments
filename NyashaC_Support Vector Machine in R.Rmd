@@ -1,0 +1,241 @@
+---
+title: 'Supervised learning: Assignment 2'
+author: "NyashaC"
+output: pdf_document
+---
+
+#Question 1 - SVM
+#Importing the data set
+```{r}
+training.data  <- read.csv('blocksTrain.csv',header = T)
+dim(training.data)
+head(training.data)
+```
+
+#Preliminary data exploration
+
+```{r}
+str(training.data)
+# There as in ID in the first column which needs to be removed prior to modelling
+
+```
+
+#Removing the ID column
+```{r}
+training.data <- training.data[,-1] #remove ID column
+```
+#Check the dimensions of the data after removing column, and look at the remaining variables
+```{r}
+dim(training.data)
+head(training.data)
+#After removing the column ID there are 11 remaining columns
+
+#We must specify y as a factor prior to modelling
+training.data$class <- as.factor(training.data$class)
+```
+
+#Inspect he structure of the data frame - all seems to be appropriately specified
+```{r}
+str(training.data)
+# Class is now a factor with 5 levels
+table(training.data$class) #volumes per class
+table(training.data$class)/nrow(training.data) #distribution per class (%)
+#Most observations belong to a text - 89%
+```
+
+
+#Install package required for SVM
+```{r}
+#install.packages('e1071')
+library(e1071)
+```
+
+#An initial scatterplot of the data
+```{r}
+pairs(training.data[1:10], main = "Page block data", pch = 21, bg = c("red", "green3", "blue","yellow","purple","deeppink","purple3",'orange','black','darkred')[unclass(training.data$class)])
+```
+
+#Split the data into a train and test set 80/200
+```{r}
+#We start by splitting the data into a train and test set.
+
+#Shuffle the data set prior to sampling
+set.seed(3)
+training.data1 <- training.data[sample(nrow(training.data)),]
+
+
+index <- 1:nrow(training.data1)
+testindex <- sample(index, trunc(length(index)/5)) # I want an 80/20 split
+testset <- training.data1[testindex,]
+trainset <- training.data1[-testindex,]
+
+```
+
+
+#We will need to scale the data (by default the data is scaled by the SVM function), specify the hyper-parameters as well as the kerel to use - we will try both the linear and the radial kernels
+#A seed = 3 is used to allow for reproducability
+
+
+#First test - choose cost = 1 and gamma =1 - results don't look to bad
+```{r}
+set.seed(3)
+svm.fit = svm(class~., data=trainset,kernel="radial",cost =1,gamma=1,scale=TRUE)
+svm.pred1 <- predict(svm.fit , trainset[,-11])
+tab1 <- table(pred = svm.pred1, true = trainset[,11])
+tab1
+1-sum(diag(tab1))/sum(tab1)
+
+svm.pred2 <- predict(svm.fit , testset[,-11])
+tab12 <- table(pred = svm.pred2, true = testset[,11])
+tab2
+1-sum(diag(tab2))/sum(tab2)
+
+```
+
+
+#Begin experiments - 1. Radial kernel
+
+
+
+```{r}
+install.packages('xtable')
+library(xtable)
+xtable(model.obj)
+
+```
+
+```{r}
+#library(e1071)
+#Initially test different values of cost to see where we need to do the grid search
+#The cost function is the regularization parameter
+set.seed(3)
+model.obj = tune.svm(class~., data=trainset,kernel="radial",
+                     
+gamma = 1, cost = seq(1,20,0.2))
+print(model.obj)
+
+#changing the cost value at a constant level of gamma doesn't appear to change the accuracy significantly, especially when increments between c are as small as 0.2. For the final tuning we will search over values t through 10, in increments of 1
+summary(model.obj)
+#svmfit <- svm(class~., data=trainset,kernel="radial",gamma = 1,cost = 1)
+#summary(svmfit)
+
+#Determine the identity of the support vecotrs - since cost is low there are many support vectors
+svmfit$index
+```
+
+
+
+```{r}
+#library(e1071)
+#Based on the results above we will search over a smaller space for cost
+#The cost function is the regularization parameter
+set.seed(3)
+model.obj = tune.svm(class~., data=trainset,kernel="radial",
+gamma = 10^(-5:-1), cost = seq(1,10,1))
+print(model.obj)
+summary(model.obj)
+
+```
+
+```{r}
+bestmod = model.obj$best.model
+bestmod
+#Determine the identity of the support vecotrs - since cost is low there are many support vectors
+bestmod$index
+```
+#Testing the predictions`
+
+```{r}
+svm.pred.train <- predict(bestmod, trainset[,-11])
+summary(svm.pred.train)
+#svm.pred.train
+```
+
+#Predict on the unseen data set
+```{r}
+unseen.dat  <- read.csv('Test_final.csv',header = T)
+dim(unseen.dat)
+head(unseen.dat)
+
+svm.pred.unseen <- predict(bestmod, unseen.dat[,-1])
+
+#Join prediction to unseen data set
+unseen.dat$class <- svm.pred.unseen
+write.csv(unseen.dat,'CHGNYA004submission.csv', row.names=FALSE)
+```
+
+#A cross-tabulation of the true versus the predicted values yields:
+```{r}
+tab1 <- table(pred = svm.pred.train, true = trainset[,11])
+tab1
+1-sum(diag(tab1))/sum(tab1)
+
+install.packages('xtable')
+library(xtable)
+xtable(tab1)
+#misclassification error rate is 2.31%% on the training set
+```
+
+#How does it predict on the test set - misclassification error rate of 3.55%
+```{r}
+svm.pred.test <- predict(bestmod, testset[,-11])
+summary(svm.pred.test)
+tab2 <- table(pred = svm.pred.test, true = testset[,11])
+tab2
+1-sum(diag(tab2))/sum(tab2)
+
+#misclassification eror rate is 3.35% on the test data set
+```
+
+# Next we try the linear kernel -- 2. Linear kernel
+
+
+```{r}
+set.seed(3)
+model.obj1 = tune.svm(class~., data=trainset,kernel="linear", cost = seq(1:10))
+print(model.obj1)
+summary(model.obj1)
+
+
+
+#svmfit <- svm(class~., data=trainset,kernel="radial",gamma = 1,cost = 1)
+#summary(svmfit)
+
+#Determine the identity of the support vecotrs - since cost is low there are many support vectors
+svmfit$index
+
+```
+
+```{r}
+bestmod1 = model.obj1$best.model
+bestmod1
+```
+Testing the predictions`
+
+```{r}
+svm.pred.train1 <- predict(bestmod1, trainset[,-11])
+summary(svm.pred.train1)
+svm.pred.train
+```
+
+A cross-tabulation of the true versus the predicted values yields:
+```{r}
+tab1 <- table(pred = svm.pred.train1, true = trainset[,11])
+tab1
+1-sum(diag(tab1))/sum(tab1)
+
+#misclassification error rate is 3.47%% on the training set
+```
+
+How does it predict on the test set
+```{r}
+svm.pred.test1 <- predict(bestmod1, testset[,-11])
+summary(svm.pred.test1)
+tab2 <- table(pred = svm.pred.test1, true = testset[,11])
+tab2
+1-sum(diag(tab2))/sum(tab2)
+
+#misclassification eror rate is 3.35% on the test data set
+```
+
+
